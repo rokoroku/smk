@@ -52,7 +52,7 @@ public class SoftKeyboard extends InputMethodService
      * This boolean indicates the optional example code for performing
      * processing of hard keys in addition to regular text generation
      * from on-screen interaction.  It would be used for input methods that
-     * perform language translations (such as converting text entered on 
+     * perform language translations (such as converting text entered on
      * a QWERTY keyboard to Chinese), but may not be used for input methods
      * that are primarily intended to be used for on-screen text entry.
      */
@@ -78,21 +78,22 @@ public class SoftKeyboard extends InputMethodService
     private Keyboard mHangulShiftedKeyboard; // Hangul Code
 
 
-    private LatinKeyboard mCurKeyboard;
-
+    private Keyboard mCurKeyboard;
     private String mWordSeparators;
 
     //TODO:vibrator
     private Vibrator mVibrator;
     private long mVibrateDuration;
 
+    private static boolean wasHangul = false;
 
 
     /**
      * Main initialization of the input method component.  Be sure to call
      * to super class.
      */
-    @Override public void onCreate() {
+    @Override
+    public void onCreate() {
         super.onCreate();
         mWordSeparators = getResources().getString(R.string.word_separators);
 
@@ -103,7 +104,8 @@ public class SoftKeyboard extends InputMethodService
      * This is the point where you can do all of your UI initialization.  It
      * is called after creation and any configuration change.
      */
-    @Override public void onInitializeInterface() {
+    @Override
+    public void onInitializeInterface() {
         if (mQwertyKeyboard != null) {
             // Configuration changes can happen after the keyboard gets recreated,
             // so we need to be able to re-build the keyboards if the available
@@ -126,11 +128,12 @@ public class SoftKeyboard extends InputMethodService
      * is displayed, and every time it needs to be re-created such as due to
      * a configuration change.
      */
-    @Override public View onCreateInputView() {
+    @Override
+    public View onCreateInputView() {
         mInputView = (KeyboardView) getLayoutInflater().inflate(
                 R.layout.input, null);
         mInputView.setOnKeyboardActionListener(this);
-        mInputView.setKeyboard(mQwertyKeyboard);
+        mInputView.setKeyboard(mCurKeyboard);
         return mInputView;
     }
 
@@ -140,18 +143,18 @@ public class SoftKeyboard extends InputMethodService
      */
 
 
-
     /**
      * This is the main point where we do our initialization of the input method
      * to begin operating on an application.  At this point we have been
      * bound to the client, and are now receiving all of the detailed information
      * about the target of our edits.
      */
-    @Override public void onStartInput(EditorInfo attribute, boolean restarting) {
+    @Override
+    public void onStartInput(EditorInfo attribute, boolean restarting) {
         super.onStartInput(attribute, restarting);
-/*        
+
         Log.i("Hangul", "onStartInput");
-*/
+
         clearHangul();
 
         previousCurPos = -1;
@@ -172,17 +175,19 @@ public class SoftKeyboard extends InputMethodService
 
         // We are now going to initialize our state based on the type of
         // text being edited.
-        switch (attribute.inputType&EditorInfo.TYPE_MASK_CLASS) {
+        switch (attribute.inputType & EditorInfo.TYPE_MASK_CLASS) {
             case EditorInfo.TYPE_CLASS_NUMBER:
             case EditorInfo.TYPE_CLASS_DATETIME:
                 // Numbers and dates default to the symbols keyboard, with
                 // no extra features.
+                Log.i("Hangul", "Type class number");
                 mCurKeyboard = mSymbolsKeyboard;
                 break;
 
             case EditorInfo.TYPE_CLASS_PHONE:
                 // Phones will also default to the symbols keyboard, though
                 // often you will want to have a dedicated phone keyboard.
+                Log.i("Hangul", "Type class phone");
                 mCurKeyboard = mSymbolsKeyboard;
                 break;
 
@@ -191,16 +196,18 @@ public class SoftKeyboard extends InputMethodService
                 // normal alphabetic keyboard, and assume that we should
                 // be doing predictive text (showing candidates as the
                 // user types).
-                mCurKeyboard = mQwertyKeyboard;
+                Log.i("Hangul", "Type class text");
+                mCurKeyboard = wasHangul ? mHangulKeyboard: mQwertyKeyboard;
                 mPredictionOn = true;
 
                 // We now look for a few special variations of text that will
                 // modify our behavior.
-                int variation = attribute.inputType &  EditorInfo.TYPE_MASK_VARIATION;
+                int variation = attribute.inputType & EditorInfo.TYPE_MASK_VARIATION;
                 if (variation == EditorInfo.TYPE_TEXT_VARIATION_PASSWORD ||
                         variation == EditorInfo.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD) {
                     // Do not display predictions / what the user is typing
                     // when they are entering a password.
+                    mCurKeyboard = mQwertyKeyboard;
                     mPredictionOn = false;
                 }
 
@@ -209,10 +216,11 @@ public class SoftKeyboard extends InputMethodService
                         || variation == EditorInfo.TYPE_TEXT_VARIATION_FILTER) {
                     // Our predictions are not useful for e-mail addresses
                     // or URIs.
+                    mCurKeyboard = mQwertyKeyboard;
                     mPredictionOn = false;
                 }
 
-                if ((attribute.inputType&EditorInfo.TYPE_TEXT_FLAG_AUTO_COMPLETE) != 0) {
+                if ((attribute.inputType & EditorInfo.TYPE_TEXT_FLAG_AUTO_COMPLETE) != 0) {
                     // If this is an auto-complete text view, then our predictions
                     // will not be shown and instead we will allow the editor
                     // to supply their own.  We only show the editor's
@@ -231,21 +239,26 @@ public class SoftKeyboard extends InputMethodService
             default:
                 // For all unknown input types, default to the alphabetic
                 // keyboard with no special features.
-                mCurKeyboard = mQwertyKeyboard;
+                mCurKeyboard = wasHangul ? mHangulKeyboard: mQwertyKeyboard;
                 updateShiftKeyState(attribute);
         }
 
         // Update the label on the enter key, depending on what the application
         // says it will do.
-        mCurKeyboard.setImeOptions(getResources(), attribute.imeOptions);
-
+        if(mCurKeyboard instanceof LatinKeyboard) {
+            ((LatinKeyboard)mCurKeyboard).setImeOptions(getResources(), attribute.imeOptions);
+        }
+        if(mInputView != null) {
+            mInputView.setKeyboard(mCurKeyboard);
+        }
     }
 
     /**
      * This is called when the user is done editing a field.  We can use
      * this to reset our state.
      */
-    @Override public void onFinishInput() {
+    @Override
+    public void onFinishInput() {
         super.onFinishInput();
 
         // Clear current composing text and candidates.
@@ -264,10 +277,11 @@ public class SoftKeyboard extends InputMethodService
         }
     }
 
-    @Override public void onStartInputView(EditorInfo attribute, boolean restarting) {
+    @Override
+    public void onStartInputView(EditorInfo attribute, boolean restarting) {
         super.onStartInputView(attribute, restarting);
         // Apply the selected keyboard to the input view.
-        mInputView.setKeyboard(mHangulKeyboard);//TODO:
+        mInputView.setKeyboard(mCurKeyboard);
         mInputView.closing();
     }
 
@@ -276,11 +290,12 @@ public class SoftKeyboard extends InputMethodService
      * Deal with the editor reporting movement of its cursor.
      */
 
-    @Override public void onUpdateSelection(int oldSelStart, int oldSelEnd,
-                                            int newSelStart, int newSelEnd,
-                                            int candidatesStart, int candidatesEnd) {
+    @Override
+    public void onUpdateSelection(int oldSelStart, int oldSelEnd,
+                                  int newSelStart, int newSelEnd,
+                                  int candidatesStart, int candidatesEnd) {
 
-        if(oldSelStart==newSelStart&&oldSelEnd==newSelEnd){
+        if (oldSelStart == newSelStart && oldSelEnd == newSelEnd) {
 
             super.onUpdateSelection(oldSelStart, oldSelEnd, newSelStart, newSelEnd,
                     candidatesStart, candidatesEnd);
@@ -305,8 +320,6 @@ public class SoftKeyboard extends InputMethodService
         Keyboard current = mInputView.getKeyboard();
 
 
-
-
         if (current != mHangulKeyboard && current != mHangulShiftedKeyboard) {
             if (mComposing.length() > 0 && (newSelStart != candidatesEnd
                     || newSelEnd != candidatesEnd)) {
@@ -317,8 +330,7 @@ public class SoftKeyboard extends InputMethodService
                     ic.finishComposingText();
                 }
             }
-        }
-        else {
+        } else {
             if (mComposing.length() > 0 && (newSelStart != candidatesEnd
                     || newSelEnd != candidatesEnd)) {
                 mComposing.setLength(0);
@@ -338,7 +350,8 @@ public class SoftKeyboard extends InputMethodService
      * to show the completions ourself, since the editor can not be seen
      * in that situation.
      */
-    @Override public void onDisplayCompletions(CompletionInfo[] completions) {
+    @Override
+    public void onDisplayCompletions(CompletionInfo[] completions) {
         if (mCompletionOn) {
             mCompletions = completions;
             if (completions == null) {
@@ -347,7 +360,7 @@ public class SoftKeyboard extends InputMethodService
             }
 
             List<String> stringList = new ArrayList<String>();
-            for (int i=0; i<(completions != null ? completions.length : 0); i++) {
+            for (int i = 0; i < (completions != null ? completions.length : 0); i++) {
                 CompletionInfo ci = completions[i];
                 if (ci != null) stringList.add(ci.getText().toString());
             }
@@ -378,12 +391,12 @@ public class SoftKeyboard extends InputMethodService
         }
 
         if (mComposing.length() > 0) {
-            char accent = mComposing.charAt(mComposing.length() -1 );
+            char accent = mComposing.charAt(mComposing.length() - 1);
             int composed = KeyEvent.getDeadChar(accent, c);
 
             if (composed != 0) {
                 c = composed;
-                mComposing.setLength(mComposing.length()-1);
+                mComposing.setLength(mComposing.length() - 1);
             }
         }
 
@@ -397,7 +410,8 @@ public class SoftKeyboard extends InputMethodService
      * We get first crack at them, and can either resume them or let them
      * continue to the app.
      */
-    @Override public boolean onKeyDown(int keyCode, KeyEvent event) {
+    @Override
+    public boolean onKeyDown(int keyCode, KeyEvent event) {
         Log.i("Hangul", "onKeyDown :" + Integer.toString(keyCode));
 
         switch (keyCode) {
@@ -433,7 +447,7 @@ public class SoftKeyboard extends InputMethodService
                 // it and do the appropriate action.
                 if (PROCESS_HARD_KEYS) {
                     if (keyCode == KeyEvent.KEYCODE_SPACE
-                            && (event.getMetaState()&KeyEvent.META_ALT_ON) != 0) {
+                            && (event.getMetaState() & KeyEvent.META_ALT_ON) != 0) {
                         // A silly example: in our input method, Alt+Space
                         // is a shortcut for 'android' in lower case.
                         InputConnection ic = getCurrentInputConnection();
@@ -466,7 +480,8 @@ public class SoftKeyboard extends InputMethodService
      * We get first crack at them, and can either resume them or let them
      * continue to the app.
      */
-    @Override public boolean onKeyUp(int keyCode, KeyEvent event) {
+    @Override
+    public boolean onKeyUp(int keyCode, KeyEvent event) {
         // If we want to do transformations on text being entered with a hard
         // keyboard, we need to process the up events to update the meta key
         // state we are tracking.
@@ -553,23 +568,20 @@ public class SoftKeyboard extends InputMethodService
     static int slideThreshold;
 
     public void onKey(int primaryCode, int[] keyCodes) {
-        Log.i("Hangul", "onKey PrimaryCode[" + Integer.toString(primaryCode)+"]");
+        Log.i("Hangul", "onKey PrimaryCode[" + Integer.toString(primaryCode) + "]");
         //TODO:
-        int Dstatus = ((LatinKeyboardView)mInputView).direction;
+        int Dstatus = ((LatinKeyboardView) mInputView).direction;
 
-        if (primaryCode == 109){
-            if(Dstatus==2){
+        if (primaryCode == 109) {
+            if (Dstatus == 2) {
                 primaryCode = 104;
-            }
-            else if(Dstatus==4){
+            } else if (Dstatus == 4) {
                 primaryCode = 110;
             }
-        }
-        else if (primaryCode == 108){
-            if(Dstatus==1){
+        } else if (primaryCode == 108) {
+            if (Dstatus == 1) {
                 primaryCode = 106;
-            }
-            else if(Dstatus==3){
+            } else if (Dstatus == 3) {
                 primaryCode = 107;
             }
         }
@@ -582,20 +594,20 @@ public class SoftKeyboard extends InputMethodService
                 commitTyped(getCurrentInputConnection());
             }
 
-            if (current == mHangulKeyboard || current == mHangulShiftedKeyboard ) {
+            if (current == mHangulKeyboard || current == mHangulShiftedKeyboard) {
                 clearHangul();
                 sendKey(primaryCode);
-            }else {
+            } else {
                 sendKey(primaryCode);
             }
             updateShiftKeyState(getCurrentInputEditorInfo());
         } else if (primaryCode == Keyboard.KEYCODE_DELETE) {
             Keyboard current = mInputView.getKeyboard();
-            if (current == mHangulKeyboard || current == mHangulShiftedKeyboard ) {
+            if (current == mHangulKeyboard || current == mHangulShiftedKeyboard) {
 
-                hangulSendKey(-2,HCURSOR_NONE);
+                hangulSendKey(-2, HCURSOR_NONE);
 
-            }else {
+            } else {
                 handleBackspace();
             }
         } else if (primaryCode == Keyboard.KEYCODE_SHIFT) {
@@ -608,22 +620,20 @@ public class SoftKeyboard extends InputMethodService
             Keyboard current = mInputView.getKeyboard();
 
             ///////////////////////////////////
-            Log.i("Hangul", "onKey Dstatus[" + Dstatus +"]");
+            Log.i("Hangul", "onKey Dstatus[" + Dstatus + "]");
 
             ////////////////////////////////////
 
 
             if (current == mSymbolsKeyboard || current == mSymbolsShiftedKeyboard) {
                 //current = mQwertyKeyboard;
-                if (primaryCode == -2){
-                    if(Dstatus==1){
+                if (primaryCode == -2) {
+                    if (Dstatus == 1) {
                         clearHangul();
                         current = mHangulKeyboard;
-                    }
-                    else if(Dstatus==3){
+                    } else if (Dstatus == 3) {
                         current = mQwertyKeyboard;
-                    }
-                    else if(Dstatus==0){
+                    } else if (Dstatus == 0) {
                         clearHangul();
                         current = mHangulKeyboard;
                     }
@@ -636,15 +646,13 @@ public class SoftKeyboard extends InputMethodService
                     commitTyped(getCurrentInputConnection());
                 }
 
-                if (primaryCode == -2){
-                    if(Dstatus==1){
+                if (primaryCode == -2) {
+                    if (Dstatus == 1) {
                         clearHangul();
                         current = mHangulKeyboard;
-                    }
-                    else if(Dstatus==3){
+                    } else if (Dstatus == 3) {
                         current = mSymbolsKeyboard;
-                    }
-                    else if(Dstatus==0){
+                    } else if (Dstatus == 0) {
                         clearHangul();
                         current = mHangulKeyboard;
                     }
@@ -653,27 +661,24 @@ public class SoftKeyboard extends InputMethodService
                 // current = mHangulKeyboard;
             }
             // Hangul End Code
-            else if (current == mHangulKeyboard|| current == mHangulShiftedKeyboard) {
+            else if (current == mHangulKeyboard || current == mHangulShiftedKeyboard) {
                 if (mComposing.length() > 0) {
                     getCurrentInputConnection().commitText(mComposing, mComposing.length());
                     mComposing.setLength(0);
                 }
 
-                if (primaryCode == -2){
-                    if(Dstatus==1){
+                if (primaryCode == -2) {
+                    if (Dstatus == 1) {
                         current = mQwertyKeyboard;
-                    }
-                    else if(Dstatus==3){
+                    } else if (Dstatus == 3) {
                         current = mSymbolsKeyboard;
-                    }
-                    else if(Dstatus==0){
+                    } else if (Dstatus == 0) {
                         clearHangul();
                         current = mQwertyKeyboard;
                     }
                 }
 
-            }
-            else {
+            } else {
                 if (mComposing.length() > 0) {
                     getCurrentInputConnection().commitText(mComposing, mComposing.length());
                     mComposing.setLength(0);
@@ -684,19 +689,17 @@ public class SoftKeyboard extends InputMethodService
             }
 
             mInputView.setKeyboard(current);
+            wasHangul = current == mHangulKeyboard;
+
             if (current == mSymbolsKeyboard) {
                 current.setShifted(false);
-
-
-
             }
 
 
             mInputView.setPreviewEnabled(true);
 
-        }
-        else {
-        	/* original code 
+        } else {
+            /* original code
             handleCharacter(primaryCode, keyCodes);
             */
 
@@ -704,7 +707,7 @@ public class SoftKeyboard extends InputMethodService
             Keyboard current = mInputView.getKeyboard();
             if (current == mHangulKeyboard || current == mHangulShiftedKeyboard) {
                 handleHangul(primaryCode, keyCodes);
-            }else {
+            } else {
                 handleCharacter(primaryCode, keyCodes);
             }
             // Hangul End Code
@@ -788,7 +791,7 @@ public class SoftKeyboard extends InputMethodService
             mInputView.setKeyboard(mHangulKeyboard);
             mHangulKeyboard.setShifted(false);
             mHangulShiftState = 0;
-        }else if (currentKeyboard == mSymbolsKeyboard) {
+        } else if (currentKeyboard == mSymbolsKeyboard) {
             mSymbolsKeyboard.setShifted(true);
             mInputView.setKeyboard(mSymbolsShiftedKeyboard);
             mSymbolsShiftedKeyboard.setShifted(true);
@@ -802,7 +805,7 @@ public class SoftKeyboard extends InputMethodService
 // Hangul Code Start
 
     private int isHangulKey(int stack_pos, int new_key) {
-    	/*    
+        /*
         MAP(0,20,1); // ㄱ,ㅅ 
     	MAP(3,23,4); // ㄴ,ㅈ
     	MAP(3,29,5); // ㄴ,ㅎ
@@ -822,10 +825,10 @@ public class SoftKeyboard extends InputMethodService
                     break;
                 case 3:
                     if (new_key == 23) return 4;
-                    else if(new_key == 29) return 5;
+                    else if (new_key == 29) return 5;
                     break;
                 case 8:
-                    if (new_key == 0)return 9;
+                    if (new_key == 0) return 9;
                     else if (new_key == 16) return 10;
                     else if (new_key == 17) return 11;
                     else if (new_key == 20) return 12;
@@ -837,10 +840,9 @@ public class SoftKeyboard extends InputMethodService
                     if (new_key == 20) return 19;
                     break;
             }
-        }
-        else {
-        	/*        	 
-     		38, 30, 39 // ㅗ ㅏ ㅘ
+        } else {
+            /*
+             38, 30, 39 // ㅗ ㅏ ㅘ
      		38, 31, 40 // ㅗ ㅐ ㅙ
     		38, 50, 41 // ㅗ ㅣ ㅚ
     		38, 38, 42 // ㅗ ㅗ ㅛ
@@ -918,8 +920,8 @@ public class SoftKeyboard extends InputMethodService
     private int previousHangulCurPos = -1;
     private int mHangulShiftState = 0;
     private int mHangulState = 0;
-    private static int mHangulKeyStack[] = {0,0,0,0,0,0}; // 초,초,중,중,종,종
-    private static int mHangulJamoStack[] = {0,0,0};
+    private static int mHangulKeyStack[] = {0, 0, 0, 0, 0, 0}; // 초,초,중,중,종,종
+    private static int mHangulJamoStack[] = {0, 0, 0};
     final static int H_STATE_0 = 0;
     final static int H_STATE_1 = 1;
     final static int H_STATE_2 = 2;
@@ -928,14 +930,14 @@ public class SoftKeyboard extends InputMethodService
     final static int H_STATE_5 = 5;
     final static int H_STATE_6 = 6;
     final static char[] h_chosung_idx =
-            {0,1, 9,2,12,18,3, 4,5, 0, 6,7, 9,16,17,18,6, 7, 8, 9,9,10,11,12,13,14,15,16,17,18};
+            {0, 1, 9, 2, 12, 18, 3, 4, 5, 0, 6, 7, 9, 16, 17, 18, 6, 7, 8, 9, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18};
     /*
         {0, 1, 9, 2,12,18, 3,4, 5, 0, 6, 7, 9,16,17, 18,6, 7, 8, 9, 9,10,11, 12, 13,14,15,16,17,18};
     //   ㄱ,ㄲ,ㄳ,ㄴ,ㄵ,ㄶ,ㄷ,ㄸ,ㄹ,ㄺ,ㄻ,ㄼ,ㄽ,ㄾ,ㄿ, ㅀ,ㅁ,ㅂ,ㅃ,ㅄ,ㅅ,ㅆ,ㅇ, ㅈ, ㅉ,ㅊ,ㅋ, ㅌ,ㅍ,ㅎ
     //   ㄱ,ㄲ,   ㄴ,      ㄷ,ㄸ,ㄹ,                     ㅁ,ㅂ,ㅃ,   ㅅ,ㅆ,ㅇ, ㅈ, ㅉ,ㅊ,ㅋ, ㅌ,ㅍ,ㅎ
     */
     final static char[] h_jongsung_idx =
-            {0, 1, 2, 3,4,5, 6, 7, 0,8, 9,10,11,12,13,14,15,16,17,0 ,18,19,20,21,22,0 ,23,24,25,26,27};
+            {0, 1, 2, 3, 4, 5, 6, 7, 0, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 0, 18, 19, 20, 21, 22, 0, 23, 24, 25, 26, 27};
 /*
     {0, 1, 2, 3, 4, 5, 6, 7, 0,8, 9,10,11, 12,13, 14,15,16, 17,0,18, 19,20,21,22, 0 ,23,24,25,26,27};
 //   x, ㄱ,ㄲ,ㄳ,ㄴ,ㄵ,ㄶ,ㄷ,ㄸ,ㄹ,ㄺ,ㄻ,ㄼ, ㄽ,ㄾ, ㄿ,ㅀ,ㅁ, ㅂ,ㅃ,ㅄ, ㅅ,ㅆ, o,ㅈ, ㅉ,ㅊ, ㅋ,ㅌ,ㅍ,ㅎ,
@@ -945,8 +947,8 @@ public class SoftKeyboard extends InputMethodService
 */
 
     final static int[] e2h_map =
-            {16,47,25,22,6, 8,29,38,32,34,30,50,48,43,31,35,17,0, 3,20,36,28,23,27,42,26,
-                    16,47,25,22,7, 8,29,38,32,34,30,50,48,43,33,37,18,1, 3,21,36,28,24,27,42,26};
+            {16, 47, 25, 22, 6, 8, 29, 38, 32, 34, 30, 50, 48, 43, 31, 35, 17, 0, 3, 20, 36, 28, 23, 27, 42, 26,
+                    16, 47, 25, 22, 7, 8, 29, 38, 32, 34, 30, 50, 48, 43, 33, 37, 18, 1, 3, 21, 36, 28, 24, 27, 42, 26};
   /*
 //	 ㅁ, ㅠ,ㅊ, ㅇ,ㄷ,ㄹ,ㅎ,ㅗ, ㅑ,ㅓ, ㅏ,ㅣ,ㅡ,ㅜ, ㅐ,ㅔ, ㅂ,ㄱ,ㄴ,ㅅ,ㅕ,ㅍ, ㅈ,ㅌ,ㅛ, ㅋ,
 	{16,47,25, 22,6, 8,29,38, 32,34, 30,50,48,43,31,35, 17,0, 3, 20,36,28, 23,27,42,26,
@@ -989,11 +991,10 @@ public class SoftKeyboard extends InputMethodService
         if (hCursor == HCURSOR_NEW) {
             Log.i("Hangul", "HCURSOR_NEW");
 
-            mComposing.append((char)newHangulChar);
+            mComposing.append((char) newHangulChar);
             getCurrentInputConnection().setComposingText(mComposing, 1);
             mHCursorState = HCURSOR_NEW;
-        }
-        else if (hCursor == HCURSOR_ADD) {
+        } else if (hCursor == HCURSOR_ADD) {
             mHCursorState = HCURSOR_ADD;
             Log.i("Hangul", "HCURSOR_ADD");
             if (mComposing.length() > 0) {
@@ -1001,34 +1002,30 @@ public class SoftKeyboard extends InputMethodService
                 getCurrentInputConnection().finishComposingText();
             }
 
-            mComposing.append((char)newHangulChar);
+            mComposing.append((char) newHangulChar);
             getCurrentInputConnection().setComposingText(mComposing, 1);
-        }
-        else if (hCursor == HCURSOR_UPDATE) {
+        } else if (hCursor == HCURSOR_UPDATE) {
             Log.i("Hangul", "HCURSOR_UPDATE");
-            mComposing.setCharAt(0, (char)newHangulChar);
+            mComposing.setCharAt(0, (char) newHangulChar);
             getCurrentInputConnection().setComposingText(mComposing, 1);
             mHCursorState = HCURSOR_UPDATE;
-        }
-        else if (hCursor == HCURSOR_APPEND) {
+        } else if (hCursor == HCURSOR_APPEND) {
             Log.i("Hangul", "HCURSOR_APPEND");
-            mComposing.append((char)newHangulChar);
+            mComposing.append((char) newHangulChar);
             getCurrentInputConnection().setComposingText(mComposing, 1);
             mHCursorState = HCURSOR_APPEND;
-        }
-        else if (hCursor == HCURSOR_NONE) {
+        } else if (hCursor == HCURSOR_NONE) {
             if (newHangulChar == -1) {
                 Log.i("Hangul", "HCURSOR_NONE [DEL -1]");
                 keyDownUp(KeyEvent.KEYCODE_DEL);
                 clearHangul();
-            }
-            else if (newHangulChar == -2) {
+            } else if (newHangulChar == -2) {
                 int hangulKeyIdx;
-                int cho_idx,jung_idx,jong_idx;
+                int cho_idx, jung_idx, jong_idx;
 
                 Log.i("Hangul", "HCURSOR_NONE [DEL -2]");
 
-                switch(mHangulState) {
+                switch (mHangulState) {
                     case H_STATE_0:
                         keyDownUp(KeyEvent.KEYCODE_DEL);
                         break;
@@ -1053,8 +1050,7 @@ public class SoftKeyboard extends InputMethodService
                             getCurrentInputConnection().commitText("", 0);
                             clearHangul();
                             mHangulState = H_STATE_0;
-                        }
-                        else {
+                        } else {
                             mHangulKeyStack[3] = 0;
                             newHangulChar = 0x314F + (mHangulKeyStack[2] - 30);
                             hangulSendKey(newHangulChar, HCURSOR_UPDATE);
@@ -1069,9 +1065,8 @@ public class SoftKeyboard extends InputMethodService
                             newHangulChar = 0x3131 + mHangulJamoStack[0];
                             hangulSendKey(newHangulChar, HCURSOR_UPDATE);
                             mHangulState = H_STATE_1; // goto 초성
-                        }
-                        else {
-                            mHangulJamoStack[1]= mHangulKeyStack[2];
+                        } else {
+                            mHangulJamoStack[1] = mHangulKeyStack[2];
                             mHangulKeyStack[3] = 0;
                             cho_idx = h_chosung_idx[mHangulJamoStack[0]];
                             jung_idx = mHangulJamoStack[1] - 30;
@@ -1080,7 +1075,7 @@ public class SoftKeyboard extends InputMethodService
                             hangulSendKey(newHangulChar, HCURSOR_UPDATE);
                         }
                         break;
-                    case H_STATE_5:	// 초성,중성,종성
+                    case H_STATE_5:    // 초성,중성,종성
                         mHangulJamoStack[2] = 0;
                         mHangulKeyStack[4] = 0;
                         cho_idx = h_chosung_idx[mHangulJamoStack[0]];
@@ -1095,14 +1090,14 @@ public class SoftKeyboard extends InputMethodService
                         mHangulJamoStack[2] = mHangulKeyStack[4];
                         cho_idx = h_chosung_idx[mHangulJamoStack[0]];
                         jung_idx = mHangulJamoStack[1] - 30;
-                        jong_idx = h_jongsung_idx[mHangulJamoStack[2]+1];;
+                        jong_idx = h_jongsung_idx[mHangulJamoStack[2] + 1];
+                        ;
                         newHangulChar = 0xAC00 + ((cho_idx * 21 * 28) + (jung_idx * 28) + jong_idx);
-                        hangulSendKey(newHangulChar,HCURSOR_UPDATE);
+                        hangulSendKey(newHangulChar, HCURSOR_UPDATE);
                         mHangulState = H_STATE_5;
                         break;
                 }
-            }
-            else if (newHangulChar == -3) {
+            } else if (newHangulChar == -3) {
                 Log.i("Hangul", "HCURSOR_NONE [DEL -3]");
                 final int length = mComposing.length();
                 if (length > 1) {
@@ -1117,103 +1112,103 @@ public class SoftKeyboard extends InputMethodService
 
 
     final private char ko_first_state[] = {
-            1,3,4,6,7,8,10,12,13,	// 0
-            16,3,4,6,7,8,10,12,13,	// 1
-            1,3,4,6,7,8,10,12,13,	// 2
-            1,3,4,6,7,8,10,12,13,	// 3
-            1,3,17,6,7,8,10,12,13,	// 4
-            1,3,4,6,7,8,10,12,13,	// 5
-            1,3,4,6,7,8,10,12,13,	// 6
-            1,3,4,6,7,8,10,12,13,	// 7
-            1,3,4,6,7,18,10,12,13,	// 8
-            1,3,4,6,7,8,10,12,13,	// 9
-            1,3,4,6,7,8,11,12,13,	// 10
-            1,3,4,6,7,8,10,12,13,	// 11
-            1,3,4,6,7,8,10,19,13,	// 12
-            1,3,4,6,7,8,10,12,15,	// 13
-            1,3,4,6,7,8,10,12,13,	// 14
-            1,3,4,6,7,8,10,12,14,	// 15
-            2,3,4,6,7,8,10,12,13,	// 16
-            1,3,5,6,7,8,10,12,13,	// 17
-            1,3,4,6,7,9,10,12,13,	// 18
-            1,3,4,6,7,8,10,12,13,	// 19
+            1, 3, 4, 6, 7, 8, 10, 12, 13,    // 0
+            16, 3, 4, 6, 7, 8, 10, 12, 13,    // 1
+            1, 3, 4, 6, 7, 8, 10, 12, 13,    // 2
+            1, 3, 4, 6, 7, 8, 10, 12, 13,    // 3
+            1, 3, 17, 6, 7, 8, 10, 12, 13,    // 4
+            1, 3, 4, 6, 7, 8, 10, 12, 13,    // 5
+            1, 3, 4, 6, 7, 8, 10, 12, 13,    // 6
+            1, 3, 4, 6, 7, 8, 10, 12, 13,    // 7
+            1, 3, 4, 6, 7, 18, 10, 12, 13,    // 8
+            1, 3, 4, 6, 7, 8, 10, 12, 13,    // 9
+            1, 3, 4, 6, 7, 8, 11, 12, 13,    // 10
+            1, 3, 4, 6, 7, 8, 10, 12, 13,    // 11
+            1, 3, 4, 6, 7, 8, 10, 19, 13,    // 12
+            1, 3, 4, 6, 7, 8, 10, 12, 15,    // 13
+            1, 3, 4, 6, 7, 8, 10, 12, 13,    // 14
+            1, 3, 4, 6, 7, 8, 10, 12, 14,    // 15
+            2, 3, 4, 6, 7, 8, 10, 12, 13,    // 16
+            1, 3, 5, 6, 7, 8, 10, 12, 13,    // 17
+            1, 3, 4, 6, 7, 9, 10, 12, 13,    // 18
+            1, 3, 4, 6, 7, 8, 10, 12, 13,    // 19
     };
 
     final private char ko_middle_state[] = {
 //		 	0			   1			     2		   	3			    4			    5		    	6			    7				
-            23,1,21,	7,2,11,		9,1,15,		4,5,0, 		0,0,0, 		6,3,0, 		0,0,0,		8,0,0,
+            23, 1, 21, 7, 2, 11, 9, 1, 15, 4, 5, 0, 0, 0, 0, 6, 3, 0, 0, 0, 0, 8, 0, 0,
 //		 	8			    9		     	10		   	11			  12		   	13			  14		   	15
-            0,0,0,		10,0,0,		0,0,0,		14,0,0,		13,0,0,		0,0,0,		0,12,0,		0,0,0,
+            0, 0, 0, 10, 0, 0, 0, 0, 0, 14, 0, 0, 13, 0, 0, 0, 0, 0, 0, 12, 0, 0, 0, 0,
 //			16			  17			  18			  19			  20			  21			  22		  	23
-            19,20,0,	18,0,0,		0,0,0,		0,0,0,		17,16,0,	22,16,0,	0,0,0,		0,3,0
+            19, 20, 0, 18, 0, 0, 0, 0, 0, 0, 0, 0, 17, 16, 0, 22, 16, 0, 0, 0, 0, 0, 3, 0
     };
 
     final private char ko_last_state[] = {
-            1,4,7,8,16,17,19,21,22,	// 0
-            24,0,0,0,0,0,3,0,0,		// 1
-            1,0,0,0,0,0,0,0,0,		// 2
-            0,0,0,0,0,0,31,0,0,		// 3
-            0,0,0,0,0,0,0,32,5,		// 4
-            0,0,0,0,0,0,0,0,33,		// 5
-            0,0,0,0,0,0,0,0,0,		// 6
-            0,0,25,0,0,0,0,0,0,		// 7
-            9,0,44,0,0,11,12,43,0,		// 8
-            36,0,0,0,0,0,0,0,0,		// 9
-            0,0,0,0,0,0,0,0,0,		// 10
-            0,0,0,0,0,14,0,0,0,		// 11
-            0,0,0,0,0,0,39,0,0,		// 12
-            0,0,45,0,0,0,0,0,0,		// 13
-            0,0,0,0,0,38,0,0,0,		// 14
-            0,0,0,0,0,0,0,43,0,		// 15
-            0,0,0,0,0,0,0,0,0,		// 16
-            0,0,0,0,0,26,18,0,0,		// 17
-            0,0,0,0,0,0,41,0,0,		// 18
-            0,0,0,0,0,0,20,0,0,		// 19
-            0,0,0,0,0,0,19,0,0,		// 20
-            0,0,0,0,0,0,0,0,0,		// 21
-            0,0,0,0,0,0,0,0,23,		// 22
-            0,0,0,0,0,0,0,0,42,		// 23
-            2,0,0,0,0,0,0,0,0,		// 24
-            0,0,28,0,0,0,0,0,0,		// 25
-            0,0,0,0,0,29,0,0,0,		// 26
-            0,0,0,0,0,0,0,0,0,		// 27
-            0,0,7,0,0,0,0,0,0,		// 28
-            0,0,0,0,0,17,0,0,0,		// 29
-            0,0,0,0,0,0,0,0,0,		// 30
-            0,0,0,0,0,0,3,0,0,		// 31
-            0,0,0,0,0,0,0,35,0,		// 32
-            0,0,0,0,0,0,0,0,34,		// 33
-            0,0,0,0,0,0,0,0,5,		// 34
-            0,0,0,0,0,0,0,32,0,		// 35
-            37,0,0,0,0,0,0,0,0,		// 36
-            9,0,0,0,0,0,0,0,0,		// 37
-            0,0,0,0,0,11,0,0,0,		// 38
-            0,0,0,0,0,0,12,0,0,		// 39
-            0,0,0,0,0,0,0,0,0,		// 40
-            0,0,0,0,0,0,18,0,0,		// 41
-            0,0,0,0,0,0,0,0,22,		// 42
-            0,0,0,0,0,0,0,15,0,		// 43
-            0,0,13,0,0,0,0,0,0,		// 44
-            0,0,44,0,0,0,0,0,0,		// 45
+            1, 4, 7, 8, 16, 17, 19, 21, 22,    // 0
+            24, 0, 0, 0, 0, 0, 3, 0, 0,        // 1
+            1, 0, 0, 0, 0, 0, 0, 0, 0,        // 2
+            0, 0, 0, 0, 0, 0, 31, 0, 0,        // 3
+            0, 0, 0, 0, 0, 0, 0, 32, 5,        // 4
+            0, 0, 0, 0, 0, 0, 0, 0, 33,        // 5
+            0, 0, 0, 0, 0, 0, 0, 0, 0,        // 6
+            0, 0, 25, 0, 0, 0, 0, 0, 0,        // 7
+            9, 0, 44, 0, 0, 11, 12, 43, 0,        // 8
+            36, 0, 0, 0, 0, 0, 0, 0, 0,        // 9
+            0, 0, 0, 0, 0, 0, 0, 0, 0,        // 10
+            0, 0, 0, 0, 0, 14, 0, 0, 0,        // 11
+            0, 0, 0, 0, 0, 0, 39, 0, 0,        // 12
+            0, 0, 45, 0, 0, 0, 0, 0, 0,        // 13
+            0, 0, 0, 0, 0, 38, 0, 0, 0,        // 14
+            0, 0, 0, 0, 0, 0, 0, 43, 0,        // 15
+            0, 0, 0, 0, 0, 0, 0, 0, 0,        // 16
+            0, 0, 0, 0, 0, 26, 18, 0, 0,        // 17
+            0, 0, 0, 0, 0, 0, 41, 0, 0,        // 18
+            0, 0, 0, 0, 0, 0, 20, 0, 0,        // 19
+            0, 0, 0, 0, 0, 0, 19, 0, 0,        // 20
+            0, 0, 0, 0, 0, 0, 0, 0, 0,        // 21
+            0, 0, 0, 0, 0, 0, 0, 0, 23,        // 22
+            0, 0, 0, 0, 0, 0, 0, 0, 42,        // 23
+            2, 0, 0, 0, 0, 0, 0, 0, 0,        // 24
+            0, 0, 28, 0, 0, 0, 0, 0, 0,        // 25
+            0, 0, 0, 0, 0, 29, 0, 0, 0,        // 26
+            0, 0, 0, 0, 0, 0, 0, 0, 0,        // 27
+            0, 0, 7, 0, 0, 0, 0, 0, 0,        // 28
+            0, 0, 0, 0, 0, 17, 0, 0, 0,        // 29
+            0, 0, 0, 0, 0, 0, 0, 0, 0,        // 30
+            0, 0, 0, 0, 0, 0, 3, 0, 0,        // 31
+            0, 0, 0, 0, 0, 0, 0, 35, 0,        // 32
+            0, 0, 0, 0, 0, 0, 0, 0, 34,        // 33
+            0, 0, 0, 0, 0, 0, 0, 0, 5,        // 34
+            0, 0, 0, 0, 0, 0, 0, 32, 0,        // 35
+            37, 0, 0, 0, 0, 0, 0, 0, 0,        // 36
+            9, 0, 0, 0, 0, 0, 0, 0, 0,        // 37
+            0, 0, 0, 0, 0, 11, 0, 0, 0,        // 38
+            0, 0, 0, 0, 0, 0, 12, 0, 0,        // 39
+            0, 0, 0, 0, 0, 0, 0, 0, 0,        // 40
+            0, 0, 0, 0, 0, 0, 18, 0, 0,        // 41
+            0, 0, 0, 0, 0, 0, 0, 0, 22,        // 42
+            0, 0, 0, 0, 0, 0, 0, 15, 0,        // 43
+            0, 0, 13, 0, 0, 0, 0, 0, 0,        // 44
+            0, 0, 44, 0, 0, 0, 0, 0, 0,        // 45
     };
 
     final private char ko_jong_m_split[] = {
-            0,1, 0,2, 1,10, 0,3, 4,13,
-            4,19, 0,4, 0,6, 8,1, 8,7,
-            8,8, 8,10, 8,17, 8,18, 8,19,
-            0,7,0,8,17,10,0,10,0,11,
-            0,12,0,13,0,15,0,16,0,17,
-            0,18,0,19
+            0, 1, 0, 2, 1, 10, 0, 3, 4, 13,
+            4, 19, 0, 4, 0, 6, 8, 1, 8, 7,
+            8, 8, 8, 10, 8, 17, 8, 18, 8, 19,
+            0, 7, 0, 8, 17, 10, 0, 10, 0, 11,
+            0, 12, 0, 13, 0, 15, 0, 16, 0, 17,
+            0, 18, 0, 19
     };
 
     final private char ko_jong_l_split[] = {
-            0,5,0,9,
-            1,19,1,11,
-            4,12,4,15,4,14,4,19,
-            8,16,8,2,8,9,8,11,
-            17,19,17,11,
-            0,14,
-            8,12,8,4,8,5
+            0, 5, 0, 9,
+            1, 19, 1, 11,
+            4, 12, 4, 15, 4, 14, 4, 19,
+            8, 16, 8, 2, 8, 9, 8, 11,
+            17, 19, 17, 11,
+            0, 14,
+            8, 12, 8, 4, 8, 5
     };
 
     final private char jongsung_28idx[] = {
@@ -1236,7 +1231,7 @@ public class SoftKeyboard extends InputMethodService
 
 
     final private int key_idx[] =
-            {0, 1, 2, 3, 4, 5, 6, 7, 8,0,1,2,};
+            {0, 1, 2, 3, 4, 5, 6, 7, 8, 0, 1, 2,};
     // ㄱ,ㄴ,ㄷ,ㄹ,ㅁ,ㅂ,ㅅ, ㅇ,ㅈ,ㅣ,ㆍ,ㅡ,
 
 
@@ -1244,32 +1239,31 @@ public class SoftKeyboard extends InputMethodService
             0, 1, 3, 6, 7, 8, 16, 17, 18, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29
     };
     final private char jongsung_code[] = {
-            0,1,2,3,4,5,6,  // ㄸ
-            8,9,10,11,12,13,14,15,16,17, // ㅃ
-            19,20,21,22,23, // ㅉ
-            25,26,27,28,29
+            0, 1, 2, 3, 4, 5, 6,  // ㄸ
+            8, 9, 10, 11, 12, 13, 14, 15, 16, 17, // ㅃ
+            19, 20, 21, 22, 23, // ㅉ
+            25, 26, 27, 28, 29
     };
 
     final private char jungsung_stack[] = {
             // 1  2 3  4  5  6  7 8  9  10 11 12 13 14 15 16 17 18 19 20 21 22 23
             // . .. ㅏ,ㅐ,ㅑ,ㅒ,ㅓ,ㅔ,ㅕ,ㅖ,ㅗ,ㅘ,ㅙ, ㅚ,ㅛ,ㅜ,ㅝ,ㅞ,ㅟ,ㅠ,ㅡ,ㅢ, ㅣ
-            0,0, 0, 0, 0, 0, 0, 0,0, 0, 0, 11,11,11, 0, 0,16,16,16,0, 0, 21, 0
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 11, 11, 11, 0, 0, 16, 16, 16, 0, 0, 21, 0
     };
 
 
-    private char getJungsungCode(char jungsung_idx)
-    {
+    private char getJungsungCode(char jungsung_idx) {
         Log.i("Hangul", "getJungsungCode[" + Integer.toString(jungsung_idx) + "]");
 
-        switch(jungsung_idx) {
+        switch (jungsung_idx) {
             case 1:
                 return 0xB7; // .
             // return 0x318D; .
             case 2:
                 return 0x3A; // :
             // return 0x2025; // ..
-            default :
-                return  (char)(0x314F + jungsung_idx - 3);
+            default:
+                return (char) (0x314F + jungsung_idx - 3);
         }
     }
 
@@ -1278,7 +1272,7 @@ public class SoftKeyboard extends InputMethodService
 
         int hangulKeyIdx = -1;
         int newHangulChar;
-        int cho_idx,jung_idx,jong_idx;
+        int cho_idx, jung_idx, jong_idx;
         int hangulChar = 0;
 /*        
         if (mHangulCursorMoved == 1) {
@@ -1294,8 +1288,7 @@ public class SoftKeyboard extends InputMethodService
 
             if (mHangulShiftState == 0) {
                 hangulKeyIdx = e2h_map[primaryCode - 0x61];
-            }
-            else {
+            } else {
                 hangulKeyIdx = e2h_map[primaryCode - 0x61 + 26];
 //                Keyboard currentKeyboard = mInputView.getKeyboard();
                 mHangulShiftedKeyboard.setShifted(false);
@@ -1304,8 +1297,7 @@ public class SoftKeyboard extends InputMethodService
                 mHangulShiftState = 0;
             }
             hangulChar = 1;
-        }
-        else if (primaryCode >= 0x41 && primaryCode <= 0x5A) {
+        } else if (primaryCode >= 0x41 && primaryCode <= 0x5A) {
             hangulKeyIdx = e2h_map[primaryCode - 0x41 + 26];
             hangulChar = 1;
         }
@@ -1322,7 +1314,7 @@ public class SoftKeyboard extends InputMethodService
 
         if (hangulChar == 1) {
 
-            switch(mHangulState) {
+            switch (mHangulState) {
 
                 case H_STATE_0: // Hangul Clear State
                     Log.d("SoftKey", "HAN_STATE 0");
@@ -1334,8 +1326,7 @@ public class SoftKeyboard extends InputMethodService
 
                         Log.d("SoftKey", "--- Goto HAN_STATE 1");
                         mHangulState = H_STATE_1; // goto 초성
-                    }
-                    else { // if 모음
+                    } else { // if 모음
                         newHangulChar = 0x314F + (hangulKeyIdx - 30);
                         hangulSendKey(newHangulChar, HCURSOR_NEW);
                         mHangulKeyStack[2] = hangulKeyIdx;
@@ -1349,7 +1340,7 @@ public class SoftKeyboard extends InputMethodService
                 case H_STATE_1: // 초성
                     Log.d("SoftKey", "HAN_STATE 1");
                     if (hangulKeyIdx < 30) { // if 자음
-                        int newHangulKeyIdx = isHangulKey(0,hangulKeyIdx);
+                        int newHangulKeyIdx = isHangulKey(0, hangulKeyIdx);
                         if (newHangulKeyIdx > 0) { // if 복자음
                             newHangulChar = 0x3131 + newHangulKeyIdx;
                             mHangulKeyStack[1] = hangulKeyIdx;
@@ -1359,12 +1350,11 @@ public class SoftKeyboard extends InputMethodService
 
                             Log.d("SoftKey", "--- Goto HAN_STATE 2");
                             mHangulState = H_STATE_2; // goto 초성(복자음)
-                        }
-                        else { // if 자음
+                        } else { // if 자음
 
                             // cursor error trick start
                             newHangulChar = 0x3131 + mHangulJamoStack[0];
-                            hangulSendKey(newHangulChar,HCURSOR_UPDATE);
+                            hangulSendKey(newHangulChar, HCURSOR_UPDATE);
                             // trick end
 
                             newHangulChar = 0x3131 + hangulKeyIdx;
@@ -1375,8 +1365,7 @@ public class SoftKeyboard extends InputMethodService
                             Log.d("SoftKey", "--- Goto HAN_STATE 1");
                             mHangulState = H_STATE_1; // goto 초성
                         }
-                    }
-                    else { // if 모음
+                    } else { // if 모음
                         mHangulKeyStack[2] = hangulKeyIdx;
                         mHangulJamoStack[1] = hangulKeyIdx;
 //	                hangulSendKey(-1);
@@ -1397,7 +1386,7 @@ public class SoftKeyboard extends InputMethodService
 
                         // cursor error trick start
                         newHangulChar = 0x3131 + mHangulJamoStack[0];
-                        hangulSendKey(newHangulChar,HCURSOR_UPDATE);
+                        hangulSendKey(newHangulChar, HCURSOR_UPDATE);
                         // trick end
 
 
@@ -1409,8 +1398,7 @@ public class SoftKeyboard extends InputMethodService
 
                         Log.d("SoftKey", "--- Goto HAN_STATE 1");
                         mHangulState = H_STATE_1; // goto 초성
-                    }
-                    else { // if 모음
+                    } else { // if 모음
                         newHangulChar = 0x3131 + mHangulKeyStack[0];
                         mHangulKeyStack[0] = mHangulKeyStack[1];
                         mHangulJamoStack[0] = mHangulKeyStack[0];
@@ -1449,10 +1437,9 @@ public class SoftKeyboard extends InputMethodService
 
                         Log.d("SoftKey", "--- Goto HAN_STATE 1");
                         mHangulState = H_STATE_1; // goto 초성
-                    }
-                    else { // 모음
+                    } else { // 모음
                         if (mHangulKeyStack[3] == 0) {
-                            int newHangulKeyIdx = isHangulKey(2,hangulKeyIdx);
+                            int newHangulKeyIdx = isHangulKey(2, hangulKeyIdx);
                             if (newHangulKeyIdx > 0) { // 복모음
                                 //	                	hangulSendKey(-1);
                                 newHangulChar = 0x314F + (newHangulKeyIdx - 30);
@@ -1462,8 +1449,7 @@ public class SoftKeyboard extends InputMethodService
                                 mHangulKeyStack[2] = newHangulKeyIdx;//TODO:
                                 mHangulJamoStack[1] = newHangulKeyIdx;
 
-                            }
-                            else { // 모음
+                            } else { // 모음
 
                                 // cursor error trick start
                                 newHangulChar = 0x314F + (mHangulJamoStack[1] - 30);
@@ -1471,12 +1457,11 @@ public class SoftKeyboard extends InputMethodService
                                 // trick end
 
                                 newHangulChar = 0x314F + (hangulKeyIdx - 30);
-                                hangulSendKey(newHangulChar,HCURSOR_ADD);
+                                hangulSendKey(newHangulChar, HCURSOR_ADD);
                                 mHangulKeyStack[2] = hangulKeyIdx;
                                 mHangulJamoStack[1] = hangulKeyIdx;
                             }
-                        }
-                        else {
+                        } else {
 
                             // cursor error trick start
                             newHangulChar = 0x314F + (mHangulJamoStack[1] - 30);
@@ -1484,7 +1469,7 @@ public class SoftKeyboard extends InputMethodService
                             // trick end
 
                             newHangulChar = 0x314F + (hangulKeyIdx - 30);
-                            hangulSendKey(newHangulChar,HCURSOR_ADD);
+                            hangulSendKey(newHangulChar, HCURSOR_ADD);
                             mHangulKeyStack[2] = hangulKeyIdx;
                             mHangulJamoStack[1] = hangulKeyIdx;
                             mHangulKeyStack[3] = 0;
@@ -1502,7 +1487,7 @@ public class SoftKeyboard extends InputMethodService
 //	                hangulSendKey(-1);
                         cho_idx = h_chosung_idx[mHangulJamoStack[0]];
                         jung_idx = mHangulJamoStack[1] - 30;
-                        jong_idx = h_jongsung_idx[mHangulJamoStack[2]+1];
+                        jong_idx = h_jongsung_idx[mHangulJamoStack[2] + 1];
                         newHangulChar = 0xAC00 + ((cho_idx * 21 * 28) + (jung_idx * 28) + jong_idx);
                         hangulSendKey(newHangulChar, HCURSOR_UPDATE);
                         if (jong_idx == 0) { // if 종성 is not valid ex, 라 + ㅉ
@@ -1515,20 +1500,18 @@ public class SoftKeyboard extends InputMethodService
                             mHangulJamoStack[1] = 0;
                             mHangulJamoStack[2] = 0;
                             newHangulChar = 0x3131 + hangulKeyIdx;
-                            hangulSendKey(newHangulChar,HCURSOR_ADD);
+                            hangulSendKey(newHangulChar, HCURSOR_ADD);
 
                             Log.d("SoftKey", "--- Goto HAN_STATE 1");
                             mHangulState = H_STATE_1; // goto 초성
-                        }
-                        else {
+                        } else {
 
                             Log.d("SoftKey", "--- Goto HAN_STATE 5");
                             mHangulState = H_STATE_5; // goto 초성,중성,종성
                         }
-                    }
-                    else { // if 모음
+                    } else { // if 모음
                         if (mHangulKeyStack[3] == 0) {
-                            int newHangulKeyIdx = isHangulKey(2,hangulKeyIdx);
+                            int newHangulKeyIdx = isHangulKey(2, hangulKeyIdx);
                             if (newHangulKeyIdx > 0) { // if 복모음
                                 //	                	hangulSendKey(-1);
                                 mHangulKeyStack[2] = newHangulKeyIdx;
@@ -1538,23 +1521,22 @@ public class SoftKeyboard extends InputMethodService
                                 jung_idx = mHangulJamoStack[1] - 30;
                                 jong_idx = 0;
                                 newHangulChar = 0xAC00 + ((cho_idx * 21 * 28) + (jung_idx * 28) + jong_idx);
-                                hangulSendKey(newHangulChar,HCURSOR_UPDATE);
+                                hangulSendKey(newHangulChar, HCURSOR_UPDATE);
 
                                 Log.d("SoftKey", "--- Goto HAN_STATE 4");
                                 mHangulState = H_STATE_4; // goto 초성,중성
-                            }
-                            else { // if invalid 복모음
+                            } else { // if invalid 복모음
 
                                 // cursor error trick start
                                 cho_idx = h_chosung_idx[mHangulJamoStack[0]];
                                 jung_idx = mHangulJamoStack[1] - 30;
                                 jong_idx = 0;
                                 newHangulChar = 0xAC00 + ((cho_idx * 21 * 28) + (jung_idx * 28) + jong_idx);
-                                hangulSendKey(newHangulChar,HCURSOR_UPDATE);
+                                hangulSendKey(newHangulChar, HCURSOR_UPDATE);
                                 // trick end
 
                                 newHangulChar = 0x314F + (hangulKeyIdx - 30);
-                                hangulSendKey(newHangulChar,HCURSOR_ADD);
+                                hangulSendKey(newHangulChar, HCURSOR_ADD);
                                 mHangulKeyStack[0] = 0;
                                 mHangulKeyStack[1] = 0;
                                 mHangulJamoStack[0] = 0;
@@ -1564,20 +1546,19 @@ public class SoftKeyboard extends InputMethodService
                                 Log.d("SoftKey", "--- Goto HAN_STATE 3");
                                 mHangulState = H_STATE_3; // goto 중성
                             }
-                        }
-                        else {
+                        } else {
 
                             // cursor error trick start
                             cho_idx = h_chosung_idx[mHangulJamoStack[0]];
                             jung_idx = mHangulJamoStack[1] - 30;
                             jong_idx = 0;
                             newHangulChar = 0xAC00 + ((cho_idx * 21 * 28) + (jung_idx * 28) + jong_idx);
-                            hangulSendKey(newHangulChar,HCURSOR_UPDATE);
+                            hangulSendKey(newHangulChar, HCURSOR_UPDATE);
                             // trick end
 
 
                             newHangulChar = 0x314F + (hangulKeyIdx - 30);
-                            hangulSendKey(newHangulChar,HCURSOR_ADD);
+                            hangulSendKey(newHangulChar, HCURSOR_ADD);
                             mHangulKeyStack[0] = 0;
                             mHangulKeyStack[1] = 0;
                             mHangulJamoStack[0] = 0;
@@ -1594,7 +1575,7 @@ public class SoftKeyboard extends InputMethodService
                 case H_STATE_5: // 초성,중성,종성
                     Log.d("SoftKey", "HAN_STATE 5");
                     if (hangulKeyIdx < 30) { // if 자음
-                        int newHangulKeyIdx = isHangulKey(4,hangulKeyIdx);
+                        int newHangulKeyIdx = isHangulKey(4, hangulKeyIdx);
                         if (newHangulKeyIdx > 0) { // if 종성 == 복자음
 //	                	hangulSendKey(-1);
                             mHangulKeyStack[5] = hangulKeyIdx;
@@ -1602,21 +1583,22 @@ public class SoftKeyboard extends InputMethodService
 
                             cho_idx = h_chosung_idx[mHangulJamoStack[0]];
                             jung_idx = mHangulJamoStack[1] - 30;
-                            jong_idx = h_jongsung_idx[mHangulJamoStack[2]+1];;
+                            jong_idx = h_jongsung_idx[mHangulJamoStack[2] + 1];
+                            ;
                             newHangulChar = 0xAC00 + ((cho_idx * 21 * 28) + (jung_idx * 28) + jong_idx);
-                            hangulSendKey(newHangulChar,HCURSOR_UPDATE);
+                            hangulSendKey(newHangulChar, HCURSOR_UPDATE);
 
                             Log.d("SoftKey", "--- Goto HAN_STATE 6");
                             mHangulState = H_STATE_6; // goto  초성,중성,종성(복자음)
-                        }
-                        else { // if 종성 != 복자음
+                        } else { // if 종성 != 복자음
 
                             // cursor error trick start
                             cho_idx = h_chosung_idx[mHangulJamoStack[0]];
                             jung_idx = mHangulJamoStack[1] - 30;
-                            jong_idx = h_jongsung_idx[mHangulJamoStack[2]+1];;
+                            jong_idx = h_jongsung_idx[mHangulJamoStack[2] + 1];
+                            ;
                             newHangulChar = 0xAC00 + ((cho_idx * 21 * 28) + (jung_idx * 28) + jong_idx);
-                            hangulSendKey(newHangulChar,HCURSOR_UPDATE);
+                            hangulSendKey(newHangulChar, HCURSOR_UPDATE);
                             // trick end
 
 
@@ -1629,13 +1611,12 @@ public class SoftKeyboard extends InputMethodService
                             mHangulJamoStack[1] = 0;
                             mHangulJamoStack[2] = 0;
                             newHangulChar = 0x3131 + hangulKeyIdx;
-                            hangulSendKey(newHangulChar,HCURSOR_ADD);
+                            hangulSendKey(newHangulChar, HCURSOR_ADD);
 
                             Log.d("SoftKey", "--- Goto HAN_STATE 1");
                             mHangulState = H_STATE_1; // goto 초성
                         }
-                    }
-                    else { // if 모음
+                    } else { // if 모음
 //	            	hangulSendKey(-1);
 
                         cho_idx = h_chosung_idx[mHangulJamoStack[0]];
@@ -1670,9 +1651,10 @@ public class SoftKeyboard extends InputMethodService
                         // cursor error trick start
                         cho_idx = h_chosung_idx[mHangulJamoStack[0]];
                         jung_idx = mHangulJamoStack[1] - 30;
-                        jong_idx = h_jongsung_idx[mHangulJamoStack[2]+1];;
+                        jong_idx = h_jongsung_idx[mHangulJamoStack[2] + 1];
+                        ;
                         newHangulChar = 0xAC00 + ((cho_idx * 21 * 28) + (jung_idx * 28) + jong_idx);
-                        hangulSendKey(newHangulChar,HCURSOR_UPDATE);
+                        hangulSendKey(newHangulChar, HCURSOR_UPDATE);
                         // trick end
 
 
@@ -1686,18 +1668,18 @@ public class SoftKeyboard extends InputMethodService
                         mHangulJamoStack[2] = 0;
 
                         newHangulChar = 0x3131 + hangulKeyIdx;
-                        hangulSendKey(newHangulChar,HCURSOR_ADD);
+                        hangulSendKey(newHangulChar, HCURSOR_ADD);
 
                         Log.d("SoftKey", "--- Goto HAN_STATE 1");
                         mHangulState = H_STATE_1; // goto 초성
-                    }
-                    else { // if 모음
+                    } else { // if 모음
 //	            	hangulSendKey(-1);
                         mHangulJamoStack[2] = mHangulKeyStack[4];
 
                         cho_idx = h_chosung_idx[mHangulJamoStack[0]];
                         jung_idx = mHangulJamoStack[1] - 30;
-                        jong_idx = h_jongsung_idx[mHangulJamoStack[2]+1];;
+                        jong_idx = h_jongsung_idx[mHangulJamoStack[2] + 1];
+                        ;
                         newHangulChar = 0xAC00 + ((cho_idx * 21 * 28) + (jung_idx * 28) + jong_idx);
                         hangulSendKey(newHangulChar, HCURSOR_UPDATE);
 
@@ -1715,15 +1697,14 @@ public class SoftKeyboard extends InputMethodService
                         jung_idx = mHangulJamoStack[1] - 30;
                         jong_idx = 0;
                         newHangulChar = 0xAC00 + ((cho_idx * 21 * 28) + (jung_idx * 28) + jong_idx);
-                        hangulSendKey(newHangulChar,HCURSOR_ADD);
+                        hangulSendKey(newHangulChar, HCURSOR_ADD);
 
                         Log.d("SoftKey", "--- Goto HAN_STATE 4");
                         mHangulState = H_STATE_4; // goto 초성,중성
                     }
                     break;
             }
-        }
-        else {
+        } else {
             // Log.i("Hangul", "handleHangul - No hancode");
             clearHangul();
             sendKey(primaryCode);
@@ -1744,7 +1725,7 @@ public class SoftKeyboard extends InputMethodService
             updateShiftKeyState(getCurrentInputEditorInfo());
             updateCandidates();
         } else {
-            sendKeyChar((char)primaryCode);
+            sendKeyChar((char) primaryCode);
         	/*
             getCurrentInputConnection().commitText(
                     String.valueOf((char) primaryCode), 1);
@@ -1774,7 +1755,7 @@ public class SoftKeyboard extends InputMethodService
 
     public boolean isWordSeparator(int code) {
         String separators = getWordSeparators();
-        return separators.contains(String.valueOf((char)code));
+        return separators.contains(String.valueOf((char) code));
     }
 
     public void pickDefaultCandidate() {
@@ -1818,7 +1799,7 @@ public class SoftKeyboard extends InputMethodService
 
         if (mVibrator == null) {
             //mVibrator = new Vibrator();
-            mVibrator = (Vibrator)getSystemService(Context.VIBRATOR_SERVICE);
+            mVibrator = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
         }
         mVibrator.vibrate(mVibrateDuration);
     }
@@ -1826,7 +1807,6 @@ public class SoftKeyboard extends InputMethodService
     public void onPress(int primaryCode) {
         //vibrate();
     }
-
 
 
     public void onRelease(int primaryCode) {

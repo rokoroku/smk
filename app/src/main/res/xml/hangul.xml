@@ -2,16 +2,13 @@
     android:keyWidth="10%p"
     android:horizontalGap="0px"
     android:verticalGap="0px"
-    android:keyHeight="@dimen/key_height"
-    >
+    android:keyHeight="@dimen/key_height">
     <Row>
         <Key android:keyWidth="16.6%p" android:codes="113" android:keyLabel="\u3142" android:keyEdgeFlags="left"/>
         <Key android:keyWidth="16.6%p" android:codes="119" android:keyLabel="\u3148"/>
         <Key android:keyWidth="16.6%p" android:codes="101" android:keyLabel="\u3137"/>
         <Key android:keyWidth="16.6%p" android:codes="114" android:keyLabel="\u3131"/>
-        
         <Key android:keyWidth="33.2%p" android:codes="108" android:keyLabel="\u3163" android:keyEdgeFlags="right"/>
-        
     </Row>
     
     <Row>
@@ -27,14 +24,11 @@
     </Row>
     
     <Row>
-        
         <Key android:keyWidth="16.6%p" android:codes="122" android:keyLabel="\u314b"/>
         <Key android:keyWidth="16.6%p" android:codes="120" android:keyLabel="\u314c"/>
         <Key android:keyWidth="16.6%p" android:codes="99" android:keyLabel="\u314a"/>
         <Key android:keyWidth="16.6%p" android:codes="118" android:keyLabel="\u314d"/>
         <Key android:keyWidth="16.6%p" android:codes="103" android:keyLabel="\u314e"/>
-        
-        
     </Row>
     
     <Row android:rowEdgeFlags="bottom">
